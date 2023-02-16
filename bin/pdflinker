@@ -1,0 +1,128 @@
+#!/usr/bin/env python
+import sys
+sys.path.append("/Users/ashmat/Desktop/Projects/pdf_linker/")
+
+import re
+import os
+import argparse
+from pdflinker import PdfLinker
+from pdflinker.utils import remove_capturing_pattern, Alignment
+import fitz
+
+
+choices_dict = {
+        '(D)' : r"\(([\d\s]+)\)", 
+        '(D.D)' : r"\(([\d\s]+)\.([\d\s]+)\)", 
+        '(D,D)' : r"\(([\d\s]+)\)"
+    }
+alignment_choices = ["left", "right", "none"]
+
+def generalize_regex(patterns):
+    new_patterns = []
+    for pattern in patterns:
+        if pattern in Alignment or pattern in choices_dict:
+            new_patterns.append(pattern)
+            continue
+        pattern = remove_capturing_pattern(pattern)
+        pattern = re.sub(r"\\d", r"([\\d\\s]+)", pattern)
+        # pattern = re.sub(r"\\d", "([\\d\\s]+)", pattern)
+        new_patterns.append(pattern)
+    return new_patterns
+
+def process_arg_pattern(args):
+    patterns = []
+    for pos in range(len(args)):
+        pattern = args[pos]
+        if type(pattern) is Alignment:
+            continue
+        alignment = (args[pos+1]
+            if pos+1 <len(args) and type(args[pos+1]) is Alignment else Alignment.NONE)
+        if pattern in choices_dict:
+            pattern = choices_dict[pattern]
+        patterns.append((pattern, alignment))
+
+    return patterns
+
+def clear(file, output):
+    doc = fitz.open(file)
+    for page in doc:
+        for link in page.get_links():
+            if "fitz" in link["id"]:
+                page.delete_link(link)
+    doc.save(output)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("file", type=str)
+    parser.add_argument("-f", "--format", choices=list(choices_dict.keys()), 
+        default=None, action='append', dest="pattern")
+    parser.add_argument("--pattern", type=str, default=None, action='append', dest="pattern")
+    parser.add_argument("-a", "--align", dest="pattern", action='append', 
+        choices=list(Alignment), default=Alignment.NONE, type=Alignment,
+        help="The alignment of the source item, Default \"None\" will choose first appearance as source element")
+    parser.add_argument("-g", "--generalize", action="store_true", help="Generalize regex pattern, e.g. allow whitespaces")
+
+    parser_page = parser.add_argument_group("Page range")
+    parser_page.add_argument("-s", "--start", type=int, default=1,
+        help="starting page, index starting from 1, default is 1.")
+    parser_page.add_argument("-n", "--pages", type=int, default=-1,
+        help="number of pages to process, default till the end.")
+    
+    parser.add_argument("--clear", action="store_true", help="Remove created links.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+        help="Provide output file, appends \"(with/without link)\" to the input file name if not provided")
+    parser.add_argument("-p", "--parallel", action="store_true", 
+        help="Enable multiprocessing.")
+    parser.add_argument("--ocr", const="eng", default=None, nargs='?', type=str,
+                        help="enable ocr, value is language, e.g. eng or rus, default is eng. Requires Tesseract installed.")
+    args = parser.parse_args()
+
+    # clear created links
+    if args.clear is True:
+        if args.output is None:
+            name, ext= os.path.splitext(args.file)
+            args.output = name + " (without links)" + ext
+        clear(args.file, args.output)
+        exit(0)
+
+    if args.generalize:
+        args.pattern = generalize_regex(args.pattern)
+
+    patterns = process_arg_pattern(args.pattern)
+
+
+    for pattern, alignment in patterns:
+        print(alignment.value +"\t" + pattern)
+
+    # indexing starts from zero
+    args.start -= 1
+
+    if args.pattern is None:
+        parser.print_help()
+        exit(1)
+
+    if args.output is None:
+        name, ext= os.path.splitext(args.file)
+        args.output = name + " (with links)" + ext
+
+    pattern = patterns[0][0]
+
+    pl = PdfLinker(
+        args.file,
+        patterns,
+        pages=args.pages,
+        start=args.start,
+        threads= -1 if args.parallel else 1,
+        ocr= False if args.ocr is None else True,
+        language=args.ocr
+        )
+
+    n_item = pl.find()
+    pl.sort()
+    doc, n_link = pl.create_links()
+    for i, (n_item_, n_link_) in enumerate(zip(n_item, n_link)):
+        print(f"pattern {i+1} -- {n_item_} items are found and {n_link_} links are created.")
+
+    doc.save(args.output)
+    print(f"Saved to {args.output}")

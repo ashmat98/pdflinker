@@ -1,0 +1,51 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}
+\usepackage{lipsum}
+
+
+\title{Sample of document with cross-links}
+\author{Ashot Matevosyan}
+\date{February 2023}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+I am referring to \eqref{a}
+\begin{equation} \label{a}
+    \alpha^2+\beta^2=c^2
+\end{equation}
+
+\begin{equation} \label{b}
+    E=m c^2
+\end{equation}
+Now I am referring to both eq. \eqref{a} and \eqref{b}
+\vspace{1cm}
+This tool also works for citations:
+\LaTeX{} \cite{lamport94} is a set of macros built atop \TeX{} \cite{texbook}.
+
+\newpage
+Yet another equation
+\begin{equation} \label{c}
+    d U=T d S - P d V
+\end{equation}
+
+and the above equation \eqref{c} is the first law of thermodynamics. Recall the equation \eqref{a}.
+\newpage
+
+
+
+
+\begin{thebibliography}{9}
+\bibitem{texbook}
+Donald E. Knuth (1986) \emph{The \TeX{} Book}, Addison-Wesley Professional.
+
+\bibitem{lamport94}
+Leslie Lamport (1994) \emph{\LaTeX: a document preparation system}, Addison
+Wesley, Massachusetts, 2nd ed.
+\end{thebibliography}
+
+
+\end{document}

@@ -4,6 +4,9 @@ from enum import Enum
 class Alignment(Enum):
     LEFT = "left"
     RIGHT = "right"
+    LEFT_END = "left-end"
+    RIGHT_END = "right-end"
+    END = "end"
     NONE = "none"
     
     @classmethod

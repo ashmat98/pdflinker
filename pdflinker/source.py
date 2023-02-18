@@ -28,10 +28,14 @@ class PdfLinker:
         self.items = [defaultdict(list) for x in self.patterns]
         self.items_source = [dict() for x in self.patterns]
 
+        self.rectangles = defaultdict(list)
+
 
 
     @staticmethod
-    def area(a , b):  # returns None if rectangles don't intersect
+    def area(a , b=None):
+        if b is None:
+            b = a
         dx = min(a.x1, b.x1) - max(a.x0, b.x0)
         dy = min(a.y1, b.y1) - max(a.y0, b.y0)
         if (dx>=0) and (dy>=0):
@@ -103,51 +107,59 @@ class PdfLinker:
         for pi, items in zip(page_range, res):
             for i_pattern, items_pattern in enumerate(items):
                 for idf, rect in items_pattern:
-                    self.items[i_pattern][idf].append((pi, rect))
-                    n_items[i_pattern] += 1
+                    for other_rect in self.rectangles[pi]:
+                        if self.area(rect, other_rect) > 0.3 * min(self.area(rect), self.area(other_rect)):
+                            break
+                    else:
+                        self.rectangles[pi].append(rect)
+                        self.items[i_pattern][idf].append((pi, rect))
+                        n_items[i_pattern] += 1
 
         return n_items
         
             
     def sort(self):
         for items, items_source, (_, alignment) in zip(self.items, self.items_source, self.patterns):
-            x_values = []
+            x_values = [(0, 10000)]
             for idf, locs in items.items():
                 items[idf] = sorted(locs, key=lambda x:(x[0], x[1].y0))
                 x_values += [(rect.x0, rect.x1) for _, rect in locs]
 
-            if alignment is Alignment.RIGHT:
-                x_values = sorted(x_values, key=lambda x: x[1], 
-                    reverse=True)
-                if len(x_values) >0:
-                    x_limit = x_values[:int(len(items) * 1.1)][-1][1]
-                else:
-                    x_limit = 0
-                
-                def check(rect):
-                    return rect.x1 > x_limit
-            elif alignment is Alignment.LEFT:
-                x_values = sorted(x_values, key=lambda x: x[0], 
-                    reverse=False)
-                if len(x_values) >0:
-                    x_limit = x_values[:int(len(items) * 1.1)][-1][0]
-                else:
-                    x_limit = 0
-                
-                def check(rect):
-                    return rect.x1 < x_limit
-            else:
-                def check(rect):
-                    return False
+            pos = min(len(x_values),int(len(items) * 1.1)) # x_limit position
+
+            if alignment in [Alignment.RIGHT,Alignment.RIGHT_END]:
+                x_values = sorted(x_values, key=lambda x: x[1], reverse=True) # sort by x1
+                x_limit = x_values[pos][1] # take x1
+
+                def get_source(locs):
+                    at_end = (alignment is Alignment.RIGHT_END)
+                    iterator = list(enumerate(locs))
+                    iterator = (iterator[::-1] if at_end else iterator)[:4]
+                    for i, (_, rect) in iterator:
+                        if rect.x1 > x_limit:
+                            return i
+                    return len(locs)-1 if at_end else 0
+
+            elif alignment in [Alignment.LEFT, Alignment.LEFT_END]:
+                x_values = sorted(x_values, key=lambda x: x[0], reverse=False) # sort by x0
+                x_limit = x_values[pos][0] # take x0
+
+                def get_source(locs):
+                    at_end = (alignment is Alignment.LEFT_END)
+                    iterator = list(enumerate(locs))
+                    iterator = (iterator[::-1] if at_end else iterator)[:4]
+                    for i, (_, rect) in iterator:
+                        if rect.x0 < x_limit:
+                            return i
+                    return len(locs)-1 if at_end else 0
+                    
+            else: # Alignment.END or Alignment.None or something else
+                def get_source(locs):
+                    return len(locs)-1 if alignment is Alignment.END else 0
             
                     
             for idf, locs in items.items():
-                items_source[idf] = 0
-
-                for i, (page, rect) in enumerate(locs):
-                    if check(rect):
-                        items_source[idf] = i
-                        break
+                items_source[idf] = get_source(locs)
 
     def create_links(self):
         n_link = [0] * len(self.patterns)

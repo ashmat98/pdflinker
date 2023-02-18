@@ -13,7 +13,8 @@ import fitz
 choices_dict = {
         '(D)' : r"\(([\d\s]+)\)", 
         '(D.D)' : r"\(([\d\s]+)\.([\d\s]+)\)", 
-        '(D,D)' : r"\(([\d\s]+)\)"
+        '(D,D)' : r"\(([\d\s]+)\)",
+        '[D]' : r"\[([\d\s]+)[\]\,\)]"
     }
 alignment_choices = ["left", "right", "none"]
 
@@ -77,7 +78,8 @@ if __name__ == "__main__":
     parser.add_argument("--ocr", const="eng", default=None, nargs='?', type=str,
                         help="enable ocr, value is language, e.g. eng or rus, default is eng. Requires Tesseract installed.")
     args = parser.parse_args()
-
+    print()
+    
     # clear created links
     if args.clear is True:
         if args.output is None:
@@ -92,8 +94,8 @@ if __name__ == "__main__":
     patterns = process_arg_pattern(args.pattern)
 
 
-    for pattern, alignment in patterns:
-        print(alignment.value +"\t" + pattern)
+    for i, (pattern, alignment) in enumerate(patterns):
+        print(f"{i+1:<2d}{alignment.value:12s} " + pattern)
 
     # indexing starts from zero
     args.start -= 1
@@ -122,7 +124,7 @@ if __name__ == "__main__":
     pl.sort()
     doc, n_link = pl.create_links()
     for i, (n_item_, n_link_) in enumerate(zip(n_item, n_link)):
-        print(f"pattern {i+1} -- {n_item_} items are found and {n_link_} links are created.")
+        print(f"pattern{i+1:2d} -- {n_item_} items are found and {n_link_} links are created.")
 
     doc.save(args.output)
     print(f"Saved to {args.output}")

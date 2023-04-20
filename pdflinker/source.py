@@ -78,8 +78,12 @@ class PdfLinker:
             items_pattern = []
             pattern_nocap = remove_capturing_pattern(pattern)
 
-
-            item_expressions = set(re.findall(pattern_nocap, text))
+            try:
+                item_expressions = set(re.findall(pattern_nocap, text))
+            except re.error as e:
+                print(f"Problem with regex {pattern_nocap}")
+                print(e)
+                raise e
             for expr in item_expressions:
                 identifier = PdfLinker._get_identifier(pattern, expr)
                 for rect in textpage.search(expr, quads=0):
@@ -120,6 +124,9 @@ class PdfLinker:
             
     def sort(self):
         for items, items_source, (_, alignment) in zip(self.items, self.items_source, self.patterns):
+            if alignment is Alignment.EXCLUDE:
+                continue
+            
             x_values = [(0, 10000)]
             for idf, locs in items.items():
                 items[idf] = sorted(locs, key=lambda x:(x[0], x[1].y0))
@@ -167,7 +174,10 @@ class PdfLinker:
 
         for i_pattern, (items, items_source) in enumerate(zip(self.items, self.items_source)):
             for idf, locs in items.items():
-                source_i = items_source[idf]
+                source_i = items_source.get(idf, None)
+                if source_i is None:
+                    continue # excluded pattern
+
                 for i, loc in enumerate(locs):
                     if i != source_i:
                         self._create_link(doc, loc, locs[source_i])

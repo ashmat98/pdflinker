@@ -14,6 +14,9 @@ class Alignment(Enum):
     def has_value(cls, value):
         values = set(item.value for item in cls)
         return value in values 
+    
+    def __str__(self):
+        return self.value
 
 def remove_capturing_pattern(pattern):
     return re.sub(r"^\(([^\?])",r"(?:\1",

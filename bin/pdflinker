@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys
-sys.path.append("/Users/ashmat/Desktop/Projects/pdflinker/")
+# sys.path.append("/Users/ashmat/Desktop/Projects/pdflinker/")
 
 import re
 import os
@@ -9,13 +9,8 @@ from pdflinker import PdfLinker
 from pdflinker.utils import remove_capturing_pattern, Alignment
 import fitz
 
+from pdflinker.utils import choices_dict
 
-choices_dict = {
-        '(D)' : r"\(([\d\s]+)\)", 
-        '(D.D)' : r"\(([\d\s]+)\.([\d\s]+)\)", 
-        '(D,D)' : r"\(([\d\s]+)\)",
-        '[D]' : r"\[([\d\s]+)[\]\,\)]"
-    }
 alignment_choices = ["left", "right", "none"]
 
 def generalize_regex(patterns):

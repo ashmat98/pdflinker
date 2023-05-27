@@ -1,23 +1,38 @@
+import sys
 import logging
+
 from tkinter import messagebox
 from pdflinker.utils import remove_capturing_pattern, Alignment
+from pdflinker import PdfLinker
 import tkinter as tk
 from tkinter.ttk import Combobox
+from tkinter.filedialog import askopenfilename
 import threading
 from tqdm.tk import tqdm
 from time import sleep
 import shelve
 import os
 from collections import OrderedDict
+from pdflinker.utils import choices_dict, process_pattern
+import fitz
+import tempfile
+import shutil
+import datetime
 
 
-import sys
-sys.path.append("/Users/ashmat/Desktop/Projects/pdflinker/")
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# messagebox.showinfo("Information","Informative message")
+# messagebox.showerror("Error", "Error message")
+# messagebox.showwarning("Warning","Warning message")
+
+
 
 
 ##########################
 # Logging
-root = logging.getLogger("stdout")
+root = logging.getLogger("stdlogger")
 root.setLevel(logging.DEBUG)
 
 handler = logging.StreamHandler(sys.stdout)
@@ -26,23 +41,19 @@ formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 root.addHandler(handler)
+
+# rootLogger = logging.getLogger()
+logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+fileHandler = logging.FileHandler("/Users/ashmat/pdflogger.log")
+fileHandler.setFormatter(logFormatter)
+root.addHandler(fileHandler)
+
+
 ####################
 
 
-# Create a Tkinter window
-root = tk.Tk()
-
 width = 400
 
-
-# root.geometry('{}x{}'.format(root.winfo_width(), root.winfo_height()))
-
-# root.config(width=width)
-root.resizable(False, False)
-
-
-def dropdown_callback(event=None):
-    print('Currently selected value is:\t%s' % event)
 
 
 PATTERNS = OrderedDict([
@@ -55,26 +66,41 @@ PATTERNS = OrderedDict([
 
 
 class PdfLinkerGui():
-    SHELVE = os.path.join("gui", "resources", "history")
+    SHELVE = os.path.join( ROOT_DIR, "resources", "history")
     PATTERN_WIDTH = 20
     ALIGN_WIDTH = 7
     INDEX_WIDTH = 4
     HISTORY_LENGTH = 10
     PAST_PATTERNS = 4
-    logger = logging.getLogger("stdout")
+    logger = logging.getLogger("stdlogger")
 
     def __init__(self, root):
         self.logger.debug("__init__")
+        self.logger.debug(f"root dir {ROOT_DIR}")
+
+        # self.tmp_dir = os.path.join(tempfile.gettempdir(), "pdflinker")
+        self.tmp_dir = os.path.join("/tmp", "pdflinker")
+
+        if not os.path.exists(self.tmp_dir):
+            os.mkdir(self.tmp_dir)
+
+        self.file_path = None
+        self.pdf_linker = {"state_hash":None, "pdf_linker": None, "doc": None}
+        
         self.root = root
+        self.root.title("PdfLinker")
+
         self.pattern_rows = []
 
         self.success = False
 
         self.unsaved_state = None
         self.current_state_index = None
+        self.previous_saved_hash = None
         self._combobox_dict = None
 
         self.db_init()
+        self._init_menubar()
 
         self._init_top_buttons()
 
@@ -82,17 +108,92 @@ class PdfLinkerGui():
 
         self._init_pattern_input()
 
-        self.run_button = tk.Button(self.root, text="run", command=self.run)
-        self.run_button.pack()
+        self._init_bottom_buttons()
+
+        # self.run_button = tk.Button(self.root, text="run", command=self.run)
+        # self.run_button.pack()
 
         self.string_var = tk.StringVar()
         self.output = tk.Label(self.root,  textvariable=self.string_var)
         self.output.pack()
 
-        self.db_recalc_size()
+        # self.db_recalc_size()
+
+        # self.root.bind('<Return>', (lambda e, b=self.save_button : b.invoke()))
 
         self.logger.debug(
             f"size: {self.db_size()}, index: {self.db_get('index',0)}")
+
+    def _init_menubar(self):
+        def not_implemented_window():
+            filewin = tk.Toplevel(root)
+            tk.Label(filewin,text="Not Implemented!").pack()
+            self.logger.warning("Not implemented")
+
+        menubar = tk.Menu(self.root)
+        filemenu = tk.Menu(menubar, tearoff=0)
+        # filemenu.add_command(label="New", command=donothing)
+        filemenu.add_command(label="Open", command=self.open_file)
+        filemenu.add_command(label="Save", command=lambda: self.save_pdf(copy=False))
+        filemenu.add_command(label="Save a copy", command=lambda: self.save_pdf(copy=True))
+        # filemenu.add_command(label="Close", command=not_implemented_window)
+
+        filemenu.add_separator()
+
+        filemenu.add_command(label="Open backups", command=self.open_temp_folder)
+        # filemenu.add_command(label="Save a backup", command=self.store_temporary)
+
+        filemenu.add_separator()
+
+        filemenu.add_command(label="Exit", command=self.root.quit)
+        menubar.add_cascade(label="File", menu=filemenu)
+
+        editmenu = tk.Menu(menubar, tearoff=0)
+        editmenu.add_command(label="Undo", command=not_implemented_window)
+
+        editmenu.add_separator()
+
+        editmenu.add_command(label="Cut", command=not_implemented_window)
+        editmenu.add_command(label="Copy", command=not_implemented_window)
+        editmenu.add_command(label="Paste", command=not_implemented_window)
+        editmenu.add_command(label="Delete", command=not_implemented_window)
+        editmenu.add_command(label="Select All", command=not_implemented_window)
+        # menubar.add_cascade(label="Edit", menu=editmenu)
+        
+        helpmenu = tk.Menu(menubar, tearoff=0)
+        helpmenu.add_command(label="Help Index", command=not_implemented_window)
+        helpmenu.add_command(label="About...", command=not_implemented_window)
+        # menubar.add_cascade(label="Help", menu=helpmenu)
+
+        self.root.config(menu=menubar)
+
+    def open_file(self, filepath=None):
+        """Open a file for editing."""
+        if filepath is None:
+            filepath = askopenfilename(
+                filetypes=[("PDF Files", "*.pdf"), ("All Files", "*.*")]
+            )
+        if not filepath:
+            return
+        self.logger.debug(f"Selected {filepath}")
+        self.file_path = filepath
+        self.pdf_linker["state_hash"] = None
+        
+    def open_temp_folder(self):
+        import subprocess
+        subprocess.call(["open", "-R", self.tmp_dir])
+
+    def load_pdf(self, file_path):
+        self.file_path = file_path
+        pl = PdfLinker(
+            self.file_path,
+            patterns,
+            pages=args.pages,
+            start=args.start,
+            threads= -1 if args.parallel else 1,
+            ocr= False if args.ocr is None else True,
+            language=args.ocr
+            )
 
     def db_recalc_size(self):
         size = 0
@@ -137,7 +238,7 @@ class PdfLinkerGui():
         self.ocr_options.config(width=2)
         self.ocr_options.pack(side=tk.LEFT)
 
-        self.clear_button = tk.Button(self.top_frame, text="Clear")
+        self.clear_button = tk.Button(self.top_frame, text="Clear", command=self._clear_links)
         self.clear_button.pack(anchor="e")
 
     def _update_button_state(self):
@@ -207,10 +308,26 @@ class PdfLinkerGui():
         self.clear_fields_button.pack(side=tk.LEFT)
 
         self.link_button = tk.Button(
-            self.button_frame, text="Link", command=self.link_pdf)
-        self.link_button.pack(anchor="e")
+            self.button_frame, text="Link", command=lambda: self.process_pdf(find=True, create=True))
+        self.link_button.pack(anchor="e", side=tk.RIGHT)
+
+        self.scan_button = tk.Button(
+            self.button_frame, text="Scan", command=lambda: self.process_pdf(find=True, create=False))
+        self.scan_button.pack(anchor="e", side=tk.RIGHT)
 
         self.add_pattern_field()
+
+    def _init_bottom_buttons(self):
+        self.bottom_frame = tk.Frame(self.root)
+        self.bottom_frame.pack(side=tk.TOP, fill=tk.X, expand=True)
+
+        self.save_button = tk.Button(
+            self.bottom_frame, text="Save", command=lambda: self.save_pdf(copy=False))
+        # self.save_button.pack(anchor="e", side=tk.RIGHT)
+
+        self.save_copy_button = tk.Button(
+            self.bottom_frame, text="Save copy", command=lambda: self.save_pdf(copy=True))
+        # self.save_copy_button.pack(anchor="e", side=tk.RIGHT)
 
     def clear_fields(self):
         while len(self.pattern_rows) > 0:
@@ -256,7 +373,7 @@ class PdfLinkerGui():
         # input_alignment = Combobox(self.frame, state="readonly", values=data, width=self.ALIGN_WIDTH)
         # input_alignment.grid(column=2,row=i_pattern)
 
-        input_pattern = Combobox(self.frame, width=self.PATTERN_WIDTH)
+        input_pattern = Combobox(self.frame, width=self.PATTERN_WIDTH, height=20)
 
         def _update_combobox_values():
             input_pattern["values"] = list(self._combobox_dict.keys())
@@ -275,7 +392,12 @@ class PdfLinkerGui():
 
         input_pattern.grid(column=1, row=i_pattern)
 
-        self.pattern_rows.append((label, input_pattern, alignment_option))
+
+        count_label = tk.Label(self.frame, text=f'')
+        count_label.grid(column=3, row=i_pattern)
+        
+
+        self.pattern_rows.append((label, input_pattern, alignment_option, count_label))
 
         if len(self.pattern_rows) > 1:
             self.del_button.config(state=tk.NORMAL)
@@ -289,68 +411,158 @@ class PdfLinkerGui():
 
     def _update_combobox(self):
         data = self._get_combobox_data()
-        for _, pattern, _ in self.pattern_rows:
+        for _, pattern, _, _ in self.pattern_rows:
             pattern["values"] = data
 
     def _set_stop_event(self):
         self.stop_event.set()
 
-    def link_pdf(self):
+    def scan_pdf(self):
+        self.logger.debug("task is finished.")
+        self.db_store_state(self.get_state())
+        pass
+
+    def process_pdf(self, find, create):
         self.link_button.config(state=tk.DISABLED)
+        self.scan_button.config(state=tk.DISABLED)
 
         self.stop_event = threading.Event()
         self.success = False
-        self.thread = threading.Thread(target=self._threaded_task)
-        self.thread.start()
-        self.root.after(200, self._check_if_ready)
+        state = self.get_state()
 
-    def _threaded_task(self):
-        pbar = tqdm(iterable=range(9000), total=9000, tk_parent=self.root,
+        self.thread = threading.Thread(target=self._threaded_task, args=(state, find, create))
+        self.thread.start()
+        self.root.after(200, self._check_if_ready, find, create)
+
+    def _threaded_task(self, state, find=False, create=False):
+
+        patterns = []
+        for row in state["patterns"]:
+            if row["pattern"] == "":
+                messagebox.showwarning(message="Empty pattern is given!")
+                return 
+            patterns.append((process_pattern(row["pattern"]), row["alignment"]))
+        if self.pdf_linker["state_hash"] != state["hash"]:
+            self.logger.info("PdfLinker going to be created.")
+            try:
+                self.pdf_linker["state_hash"] = state["hash"]
+                self.pdf_linker["pdf_linker"] = PdfLinker(
+                    self.file_path, 
+                    patterns,
+                    start=int(state["start"])-1,
+                    ocr = state["ocr"] != "off",
+                    threads=-1,
+                    language=state["ocr"])
+                self.pdf_linker["doc"] = None
+            except Exception() as e:
+                self.logger.error(str(e))
+                self.logger.exception("Error")
+                raise e
+            self.logger.info("new PdfLinker created.")
+
+        pl = self.pdf_linker["pdf_linker"]
+
+        
+        pbar = tqdm(iterable=range(pl.pages), total=pl.pages, tk_parent=self.root,
                     cancel_callback=self._set_stop_event)
+        
         pwindow = pbar._tk_window
         pwindow.resizable(False, False)
-
         def on_closing():
+            self.logger.debug("on_closing called.")
             self.stop_event.set()
 
         pwindow.protocol("WM_DELETE_WINDOW", on_closing)
-
         width, height, x, y = (
             self.root.winfo_width(), self.root.winfo_height(),
             self.root.winfo_x(), self.root.winfo_y()
         )
         pwindow.geometry(f"{width}x{80}+{x}+{y+18+height}")
 
-        for _ in pbar:
+        
+        if find is True and pl.find_called is False:            
+            n_item = pl.find(pbar, self.stop_event)
+            self.logger.debug("find is called.")
             if self.stop_event.is_set():
-                break
+                pwindow.destroy()
+                return
+            for n, row in zip(n_item, self.pattern_rows):
+                _,_,_,count_label = row
+                count_label.config(text=f"  {n} items")
 
-            sleep(0.0001)
-        else:
-            self.success = True
+        if create is True and self.pdf_linker["doc"] is None:
+            pl.sort()
+            self.logger.debug("sort is called.")
+            doc, n_link = pl.create_links()
+            self.logger.debug("create_links is called.")
 
-            # pbar.update(1)
+            for n_link_, row in zip(n_link, self.pattern_rows):
+                _,_,_,count_label = row
+
+                count_label.config(text=count_label["text"] + f", {n_link_} links")
+
+            self.pdf_linker["doc"] = doc
+
+            # doc.save(args.output)
+            pass
+
+        # for i in range(pl.pages):
+        #     sleep(10)
+        #     pbar.update(1)
+        self.success = True
+
         # pbar.close()  # intended usage, might be buggy
          # workaround
         pwindow.destroy()
 
-    def _check_if_ready(self):
+    def _check_if_ready(self, find, create):
         if self.thread.is_alive():
             # not ready yet, run the check again soon
-            self.root.after(200, self._check_if_ready)
+            self.root.after(200, self._check_if_ready, find, create)
         else:
-            self.link_pdf_callback()
+            self.link_pdf_callback(find, create)
 
-    def link_pdf_callback(self):
-        self.logger.debug("task is finished.")
+    def link_pdf_callback(self, find, create):
+        self.logger.debug(f"task is finished. Sucsess = {self.success}")
         self.db_store_state(self.get_state())
 
+        self.scan_button.config(state=tk.NORMAL)
         self.link_button.config(state=tk.NORMAL)
-        tk.Label(self.root, text=str(self.success)).pack()
+        if not self.success:
+            return
+        if create:
+            self.save_button.pack(anchor="e", side=tk.RIGHT)
+            self.save_copy_button.pack(anchor="e", side=tk.RIGHT)
+            
+        # tk.Label(self.root, text=str(self.success)).pack()
+
+    def save_pdf(self, copy):
+        if copy:
+            name, ext= os.path.splitext(self.file_path)
+            output = name + " (with links)" + ext
+            doc = self.pdf_linker["doc"]
+            doc.save(output)
+        else:
+            self.store_temporary()
+            answer  = messagebox.askyesno("Question","Overwrite file?")
+            self.logger.debug(f"prompt answered {answer}")
+            if answer:
+                doc = self.pdf_linker["doc"]
+                doc.save(self.file_path, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
+
+    def store_temporary(self):
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+        filename = now + " " + os.path.split(self.file_path)[1]
+        try:
+            shutil.copy(self.file_path, os.path.join(self.tmp_dir, filename))
+        except Exception as e:
+            self.logger.error(str(e))
+
+
 
     def run(self):
         data = []
-        for _, pattern, alignment in self.pattern_rows:
+        for _, pattern, alignment, _ in self.pattern_rows:
             data.append("  ".join(pattern.get() + " " + alignment.var.get()))
 
         self.string_var.set("\n".join(data))
@@ -360,12 +572,13 @@ class PdfLinkerGui():
         state["ocr"] = self.ocr_var.get()
         state["start"] = self.start_spinbox.get()
         state["patterns"] = []
-        for _, pattern, alignment in self.pattern_rows:
+        for _, pattern, alignment, _ in self.pattern_rows:
             state["patterns"].append(
                 {"pattern": pattern.get(),
                  "alignment": alignment.var.get()
                  }
             )
+        state["hash"] = hash(repr(state.values()))
         return state
 
     def db_init(self):
@@ -377,9 +590,14 @@ class PdfLinkerGui():
     def db_store_state(self, state):
         if state is None:
             raise Exception("Empty state is to be saved.")
+        
+        if self.previous_saved_hash == state["hash"]:
+            return 
         with shelve.open(self.SHELVE) as db:
             index = db.get("index", 0)
+            
             db[str(index)] = state
+            self.previous_saved_hash = state["hash"]
             self.logger.debug(f"state is stored at index {index}.")
             db["index"] = index + 1
             db["size"] = db.get("size", 0) + 1
@@ -423,7 +641,6 @@ class PdfLinkerGui():
 
     def set_state(self, state):
         self.logger.debug("setting state")
-        print(state)
         if state is None:
             self.logger.debug("state is None")
             return
@@ -432,27 +649,18 @@ class PdfLinkerGui():
         for i, pattern_dict in enumerate(state["patterns"]):
             if i == len(self.pattern_rows):
                 self.add_pattern_field()
-            _, pattern, alignment = self.pattern_rows[i]
+            _, pattern, alignment, _ = self.pattern_rows[i]
             pattern.set(pattern_dict["pattern"]),
             alignment.var.set(pattern_dict["alignment"])
         while len(self.pattern_rows) > len(state["patterns"]):
             self.del_pattern_field()
 
+    def _clear_links(self):
+        pl = PdfLinker(self.file_path, [])
+        doc = pl.remove_links()
+        self.store_temporary()
+        doc.save(self.file_path, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
 
-PdfLinkerGui(root)
 
-# Set the size of the window
-# width, height = root.winfo_width(), root.winfo_height()
-# screen_height = screen_width = 100
-screen_width = root.winfo_screenwidth()
-screen_height = root.winfo_screenheight()
 
-# Calculate the x and y coordinates for the window to appear in the center
-x = (screen_width // 3)
-y = (screen_height // 3)
 
-# Set the window size and position
-root.geometry('+{}+{}'.format(x, y))
-
-# Start the Tkinter event loop
-root.mainloop()

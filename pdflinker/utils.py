@@ -25,3 +25,14 @@ def remove_capturing_pattern(pattern):
     return re.sub(r"^\(","",
         re.sub(r"([^\\])[\(\)]", r"\1", pattern))
 
+def process_pattern(patt):
+    if patt in choices_dict:
+        patt = choices_dict[patt]
+    return patt
+
+choices_dict = {
+        '(D)' : r"\(([\d\s]+)\)", 
+        '(D.D)' : r"\(([\d\s]+)\.([\d\s]+)\)", 
+        '(D,D)' : r"\(([\d\s]+)\)",
+        '[D]' : r"\[([\d\s]+)[\]\,\)]"
+    }

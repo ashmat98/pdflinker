@@ -7,11 +7,13 @@ from tqdm import tqdm
 from collections import defaultdict
 import multiprocessing
 from .utils import Alignment, remove_capturing_pattern
+import logging
+
+logger = logging.getLogger()
 
 class PdfLinker:
     def __init__(self, file, patterns, pages=-1, start=0, ocr=False, language="eng", threads=1):
         self.file = file
-
         doc = fitz.open(file)
         self.start = start
         if pages == -1:
@@ -19,7 +21,8 @@ class PdfLinker:
         else:
             self.finish = min(doc.page_count,
                 self.start + pages)
-
+        self.pages = self.finish - self.start
+        
         self.ocr = ocr
         self.language="eng"
         self.patterns = patterns
@@ -29,6 +32,8 @@ class PdfLinker:
         self.items_source = [dict() for x in self.patterns]
 
         self.rectangles = defaultdict(list)
+        self.find_called = False
+        logger.debug("PdfLinker.__init__ finished")
 
 
 
@@ -93,20 +98,30 @@ class PdfLinker:
             items.append(items_pattern)
         return items
 
-    def find(self):
+    def find(self, pbar = None, stop_event=None):
         page_range = list(range(self.start, self.finish))
+
+        if pbar is None:
+            pbar = tqdm(total=self.pages)
 
         if self.threads == 1:
             res = []
-            for pi in tqdm(page_range):
+            for pi in page_range:
                 res.append(self.process_page(pi))
+                pbar.update(1)
                 
         else:
             pool = multiprocessing.Pool(self.threads)
-            res = list(tqdm(
-                pool.imap(self.process_page, page_range), 
-                total=len(page_range)))
-        
+            res = []
+
+            for element in pool.imap(self.process_page, page_range):
+                res.append(element)
+                pbar.update(1)
+                if stop_event is not None and stop_event.is_set():
+                    pool.terminate()
+                    pool.close()
+                    return
+
         n_items = [0]*len(self.patterns)
         for pi, items in zip(page_range, res):
             for i_pattern, items_pattern in enumerate(items):
@@ -119,6 +134,7 @@ class PdfLinker:
                         self.items[i_pattern][idf].append((pi, rect))
                         n_items[i_pattern] += 1
 
+        self.find_called = True
         return n_items
         
             
@@ -199,6 +215,15 @@ class PdfLinker:
             "name" : "Ashot's link"
         }
         from_page.insert_link(link)
+
+    def remove_links(self):
+        doc = fitz.open(self.file)
+        for i_page in range(doc.page_count):
+            page = doc.load_page(i_page)
+            for link_dict in page.get_links():
+                if "fitz" in link_dict["id"]:
+                    page.delete_link({"xref" : link_dict["xref"]})
+        return doc
     
     # def save(self, output):
     #     self.doc.save(output)

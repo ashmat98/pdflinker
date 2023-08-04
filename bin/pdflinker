@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 import sys
-# sys.path.append("/Users/ashmat/Desktop/Projects/pdflinker/")
+sys.path.append("/Users/ashmat/pdflinker/")
 
 import re
 import os
 import argparse
 from pdflinker import PdfLinker
-from pdflinker.utils import remove_capturing_pattern, Alignment
+from pdflinker.utils import remove_capturing_pattern, Alignment, process_pattern
 import fitz
 
 from pdflinker.utils import choices_dict
@@ -31,11 +31,13 @@ def process_arg_pattern(args):
         pattern = args[pos]
         if type(pattern) is Alignment:
             continue
+        
         alignment = (args[pos+1]
             if pos+1 <len(args) and type(args[pos+1]) is Alignment else Alignment.NONE)
-        if pattern in choices_dict:
-            pattern = choices_dict[pattern]
-        patterns.append((pattern, alignment))
+
+        pattern = process_pattern(pattern)
+
+        patterns.append(pattern + (alignment,))
 
     return patterns
 
@@ -89,7 +91,7 @@ if __name__ == "__main__":
     patterns = process_arg_pattern(args.pattern)
 
 
-    for i, (pattern, alignment) in enumerate(patterns):
+    for i, (pattern, pattern_for_source, alignment) in enumerate(patterns):
         print(f"{i+1:<2d}{alignment.value:12s} " + pattern + "\t" + remove_capturing_pattern(pattern))
 
     # indexing starts from zero

@@ -59,8 +59,10 @@ width = 400
 PATTERNS = OrderedDict([
     ("(D)", Alignment.RIGHT),
     ("(D.D)", Alignment.RIGHT),
+    ("(C.D)", Alignment.RIGHT),
     ("(D,D)", Alignment.RIGHT),
-    ("[D]", Alignment.LEFT_END),
+    ("[D]", Alignment.END),
+    ("[D] -> D.", Alignment.END),
     ("§D", Alignment.LEFT),
 ])
 
@@ -185,15 +187,15 @@ class PdfLinkerGui():
 
     def load_pdf(self, file_path):
         self.file_path = file_path
-        pl = PdfLinker(
-            self.file_path,
-            patterns,
-            pages=args.pages,
-            start=args.start,
-            threads= -1 if args.parallel else 1,
-            ocr= False if args.ocr is None else True,
-            language=args.ocr
-            )
+        # pl = PdfLinker(
+        #     self.file_path,
+        #     patterns,
+        #     pages=args.pages,
+        #     start=args.start,
+        #     threads= -1 if args.parallel else 1,
+        #     ocr= False if args.ocr is None else True,
+        #     language=args.ocr
+        #     )
 
     def db_recalc_size(self):
         size = 0
@@ -441,7 +443,8 @@ class PdfLinkerGui():
             if row["pattern"] == "":
                 messagebox.showwarning(message="Empty pattern is given!")
                 return 
-            patterns.append((process_pattern(row["pattern"]), row["alignment"]))
+            patterns.append(process_pattern(row["pattern"]) + (Alignment(row["alignment"]),))
+
         if self.pdf_linker["state_hash"] != state["hash"]:
             self.logger.info("PdfLinker going to be created.")
             try:
@@ -549,6 +552,8 @@ class PdfLinkerGui():
             if answer:
                 doc = self.pdf_linker["doc"]
                 doc.save(self.file_path, incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
+            
+            self.root.quit()
 
     def store_temporary(self):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")

@@ -8,7 +8,8 @@ import tkinter as tk
 from tkinter.ttk import Combobox
 from tkinter.filedialog import askopenfilename
 import threading
-from tqdm.tk import tqdm
+# from tqdm.tk import tqdm
+from tqdm import tqdm
 from time import sleep
 import shelve
 import os
@@ -18,6 +19,7 @@ import fitz
 import tempfile
 import shutil
 import datetime
+from .pbar import PBar
 
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -466,33 +468,19 @@ class PdfLinkerGui():
         pl = self.pdf_linker["pdf_linker"]
 
         
-        pbar = tqdm(iterable=range(pl.pages), total=pl.pages, tk_parent=self.root,
-                    cancel_callback=self._set_stop_event)
-        
-        pwindow = pbar._tk_window
-        pwindow.resizable(False, False)
-        def on_closing():
-            self.logger.debug("on_closing called.")
-            self.stop_event.set()
-
-        pwindow.protocol("WM_DELETE_WINDOW", on_closing)
-        width, height, x, y = (
-            self.root.winfo_width(), self.root.winfo_height(),
-            self.root.winfo_x(), self.root.winfo_y()
-        )
-        pwindow.geometry(f"{width}x{80}+{x}+{y+18+height}")
-
+        pbar = PBar(self.root, iterable=range(pl.pages), total=pl.pages)
         
         if find is True and pl.find_called is False:            
-            n_item = pl.find(pbar, self.stop_event)
+            n_item = pl.find(pbar, pbar.stop_event)
             self.logger.debug("find is called.")
-            if self.stop_event.is_set():
-                pwindow.destroy()
+            if pbar.stop_event.is_set():
+                pbar.close()
                 return
             for n, row in zip(n_item, self.pattern_rows):
                 _,_,_,count_label = row
                 count_label.config(text=f"  {n} items")
 
+        pbar.set_label("Creating links...")
         if create is True and self.pdf_linker["doc"] is None:
             pl.sort()
             self.logger.debug("sort is called.")
@@ -508,6 +496,8 @@ class PdfLinkerGui():
 
             # doc.save(args.output)
             pass
+        
+        pbar.close()
 
         # for i in range(pl.pages):
         #     sleep(10)
@@ -516,7 +506,7 @@ class PdfLinkerGui():
 
         # pbar.close()  # intended usage, might be buggy
          # workaround
-        pwindow.destroy()
+        # pwindow.destroy()
 
     def _check_if_ready(self, find, create):
         if self.thread.is_alive():

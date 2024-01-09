@@ -25,12 +25,6 @@ from .pbar import PBar
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-# messagebox.showinfo("Information","Informative message")
-# messagebox.showerror("Error", "Error message")
-# messagebox.showwarning("Warning","Warning message")
-
-
-
 
 ##########################
 # Logging
@@ -50,8 +44,7 @@ fileHandler = logging.FileHandler("/Users/ashmat/pdflogger.log")
 fileHandler.setFormatter(logFormatter)
 root.addHandler(fileHandler)
 
-
-####################
+##########################
 
 
 width = 400
@@ -82,9 +75,7 @@ class PdfLinkerGui():
         self.logger.debug("__init__")
         self.logger.debug(f"root dir {ROOT_DIR}")
 
-        # self.tmp_dir = os.path.join(tempfile.gettempdir(), "pdflinker")
         self.tmp_dir = os.path.join("/tmp", "pdflinker")
-
         if not os.path.exists(self.tmp_dir):
             os.mkdir(self.tmp_dir)
 
@@ -113,9 +104,6 @@ class PdfLinkerGui():
         self._init_pattern_input()
 
         self._init_bottom_buttons()
-
-        # self.run_button = tk.Button(self.root, text="run", command=self.run)
-        # self.run_button.pack()
 
         self.string_var = tk.StringVar()
         self.output = tk.Label(self.root,  textvariable=self.string_var)
@@ -189,15 +177,6 @@ class PdfLinkerGui():
 
     def load_pdf(self, file_path):
         self.file_path = file_path
-        # pl = PdfLinker(
-        #     self.file_path,
-        #     patterns,
-        #     pages=args.pages,
-        #     start=args.start,
-        #     threads= -1 if args.parallel else 1,
-        #     ocr= False if args.ocr is None else True,
-        #     language=args.ocr
-        #     )
 
     def db_recalc_size(self):
         size = 0
@@ -218,8 +197,6 @@ class PdfLinkerGui():
         self.top_right_button.pack(side=tk.LEFT)
         self._update_button_state()
 
-        # current_value = tk.StringVar()
-        # current_value.set("1")
         tk.Label(self.top_frame, text='start:').pack(side=tk.LEFT)
         self.start_spinbox = tk.ttk.Spinbox(
             self.top_frame,
@@ -499,14 +476,8 @@ class PdfLinkerGui():
         
         pbar.close()
 
-        # for i in range(pl.pages):
-        #     sleep(10)
-        #     pbar.update(1)
         self.success = True
 
-        # pbar.close()  # intended usage, might be buggy
-         # workaround
-        # pwindow.destroy()
 
     def _check_if_ready(self, find, create):
         if self.thread.is_alive():

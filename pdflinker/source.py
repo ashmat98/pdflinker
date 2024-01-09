@@ -8,7 +8,7 @@ from collections import defaultdict
 import multiprocessing
 from .utils import Alignment, remove_capturing_pattern
 import logging
-import time
+
 logger = logging.getLogger()
 
 class PdfLinker:
@@ -142,7 +142,6 @@ class PdfLinker:
             for page_index in page_range:
                 res.append(self.process_page(page_index))
                 pbar.update(1)
-                # time.sleep(1)
                 if stop_event is not None and stop_event.is_set():
                     return
                 
